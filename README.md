@@ -166,7 +166,7 @@ site/
 
 ---
 
-## 七、部署（容器 → 个人版 ACR → k3s）
+## 六、部署（镜像 → 个人版 ACR → k3s）
 
 与 `Gengbo89/home`、`Gengbo89/ansible-canvas` 一致的套路：**镜像只由 GitHub CI 构建**，
 本机不产出镜像；CI 推个人版 ACR，再 SSH 到 k3s 主机 apply 清单。
