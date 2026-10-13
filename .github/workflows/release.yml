@@ -110,6 +110,7 @@ jobs:
   # ------------------------------------------------------------------
   deploy:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -138,14 +139,16 @@ jobs:
           # 镜像拉取 + 首次证书签发（Let's Encrypt 走 DNS 校验通常 20~60s）
           command_timeout: 10m
           script: |
-            set -eux
-            cd /root/wuhan-miniature-deploy
+            set -e
 
-            # 把本次 tag 写进清单，避免先 :latest 再 tag 的两轮滚动
-            sed -i "s|\(wuhan-miniature:\)[^\"']*|\1${GITHUB_REF_NAME}|g" \
-              deploy/wuhan-miniature.yaml
+            MANIFEST="/root/wuhan-miniature-deploy/deploy/wuhan-miniature.yaml"
+            REPO="crpi-p67sy5t6k9nsmste.cn-hangzhou.personal.cr.aliyuncs.com/gengbo/wuhan-miniature"
+            TAG="${{ github.ref_name }}"
 
-            kubectl apply -f deploy/wuhan-miniature.yaml
+            sed -i "s#image: ${REPO}:.*#image: ${REPO}:${TAG}#" "$MANIFEST"
+            grep -n "image: ${REPO}" "$MANIFEST"
+
+            kubectl apply -f "$MANIFEST"
 
             # 等滚动完成；失败就打印诊断信息再退出非零，别让流水线"绿着坏"
             if ! kubectl rollout status deployment/wuhan-miniature \
