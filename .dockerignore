@@ -1,0 +1,12 @@
+# 构建上下文只需要 site/ 与 nginx.conf。
+# 注意：nginx.conf 必须留在上下文里（Dockerfile 要 COPY 它），
+# 早先误把它写进忽略列表，导致 COPY 找不到文件、构建直接失败。
+.git
+.gitignore
+.github
+_verify
+_reference
+README.md
+Dockerfile
+.dockerignore
+deploy

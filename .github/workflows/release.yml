@@ -1,0 +1,161 @@
+name: Build and Push Image
+
+# 与 Gengbo89/home、Gengbo89/ansible-canvas 保持一致：推 v* tag 触发；
+# 额外允许手动触发，便于首次验证。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  IMAGE: crpi-p67sy5t6k9nsmste.cn-hangzhou.personal.cr.aliyuncs.com/gengbo/wuhan-miniature
+
+jobs:
+
+  # ------------------------------------------------------------------
+  # 先把「这个镜像值得推上去」验一遍。
+  #
+  # 本站是纯静态站，没有编译步骤，所以"验证"不是跑测试，而是检查
+  # 交付物的完整性：入口文件在不在、有没有悄悄引用站外资源。
+  # 特别是外链检查——本站的卖点之一是零外部请求，
+  # 一旦有人在 index.html 里塞了个 CDN，页面上完全看不出来，
+  # 但离线可用性就没了。所以这里做成硬门禁。
+  # ------------------------------------------------------------------
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 校验站点文件完整性
+        run: |
+          set -eux
+          for f in site/index.html site/styles.css site/favicon.svg \
+                   site/js/app.js site/js/city.js site/js/geom.js \
+                   site/vendor/three.module.js site/vendor/three.core.js; do
+            test -s "$f" || { echo "缺少或为空: $f"; exit 1; }
+          done
+          echo "站点文件数: $(find site -type f | wc -l)"
+
+      - name: 校验零外部引用（vendor 除外）
+        run: |
+          set -eux
+          # 允许出现 http(s) 的地方：注释里的版权说明、以及 vendor/ 内的 three.js 源码。
+          # site/ 自己的 html/css/js 里不允许出现任何站外地址。
+          if grep -rn "https\?://" site/index.html site/styles.css site/js/ \
+               | grep -v "127\.0\.0\.1"; then
+            echo "::error::站点源码里出现了站外地址，破坏离线可用性"
+            exit 1
+          fi
+          echo "零外部引用检查通过"
+
+      - name: 校验 JS 语法
+        run: |
+          set -eux
+          mkdir -p /tmp/syntaxcheck
+          for f in site/js/geom.js site/js/city.js site/js/app.js; do
+            cp "$f" "/tmp/syntaxcheck/$(basename "$f" .js).mjs"
+            node --check "/tmp/syntaxcheck/$(basename "$f" .js).mjs"
+          done
+          echo "三个模块语法检查通过"
+
+  # ------------------------------------------------------------------
+  # 构建并推送镜像
+  # ------------------------------------------------------------------
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    # 纯静态镜像，从 nginx:alpine 起，正常 1~2 分钟；
+    # 留 20 分钟是为了容忍 registry 偶发慢（拉基础镜像超时重试）
+    timeout-minutes: 20
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login Aliyun ACR
+        uses: docker/login-action@v3
+        with:
+          registry: crpi-p67sy5t6k9nsmste.cn-hangzhou.personal.cr.aliyuncs.com
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        run: |
+          docker build \
+            -t $IMAGE:${GITHUB_REF_NAME} \
+            -t $IMAGE:latest .
+
+      - name: Push image
+        run: |
+          docker push $IMAGE:${GITHUB_REF_NAME}
+          docker push $IMAGE:latest
+
+  # ------------------------------------------------------------------
+  # 部署到 k3s（与 home / ansible-canvas 同一台机器、同一个 dev namespace）
+  #
+  # 先 scp 清单再 apply，而不是 apply 完再 set image：
+  # 后者会先按旧 tag 滚动一次、再按新 tag 滚动一次，白白多发一轮 Pod。
+  # 用 sed 在 apply 之前把 tag 写进清单，一次滚动到位。
+  #
+  # 注意 k3s 的 SSH 不在 22 端口，端口由 secrets.K3S_PORT 提供。
+  # ------------------------------------------------------------------
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy manifests to k3s host
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.K3S_HOST }}
+          port: ${{ secrets.K3S_PORT }}
+          username: ${{ secrets.K3S_USER }}
+          key: ${{ secrets.K3S_SSH_KEY }}
+          source: "deploy/wuhan-miniature.yaml"
+          target: "/root/wuhan-miniature-deploy"
+
+      - name: Apply manifests and roll out
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.K3S_HOST }}
+          port: ${{ secrets.K3S_PORT }}
+          username: ${{ secrets.K3S_USER }}
+          key: ${{ secrets.K3S_SSH_KEY }}
+          # 镜像拉取 + 首次证书签发（Let's Encrypt 走 DNS 校验通常 20~60s）
+          command_timeout: 10m
+          script: |
+            set -eux
+            cd /root/wuhan-miniature-deploy
+
+            # 把本次 tag 写进清单，避免先 :latest 再 tag 的两轮滚动
+            sed -i "s|\(wuhan-miniature:\)[^\"']*|\1${GITHUB_REF_NAME}|g" \
+              deploy/wuhan-miniature.yaml
+
+            kubectl apply -f deploy/wuhan-miniature.yaml
+
+            # 等滚动完成；失败就打印诊断信息再退出非零，别让流水线"绿着坏"
+            if ! kubectl rollout status deployment/wuhan-miniature \
+                   -n dev --timeout=180s; then
+              echo "::error::rollout 未完成，输出诊断信息"
+              kubectl get pods -n dev -l app=wuhan-miniature -o wide || true
+              kubectl describe pods -n dev -l app=wuhan-miniature | tail -50 || true
+              kubectl logs -n dev -l app=wuhan-miniature --tail=50 || true
+              exit 1
+            fi
+
+            kubectl get pods -n dev -l app=wuhan-miniature
+            kubectl get ingress -n dev wuhan-miniature

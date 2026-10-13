@@ -1,0 +1,115 @@
+# 江城小境 · WUHAN IN MINIATURE —— k3s 部署清单（ns: dev）
+#
+# 与 home / ansible-canvas 同一个集群、同一个 namespace、同一套 ingress-nginx + cert-manager。
+#
+# 与 ansible-canvas 的差异及原因：
+#   - 本站是纯静态站（nginx 80），不是常驻后端，所以 Service 不需要端口映射
+#   - 不需要持久卷：站点内容全部烧在镜像里，Pod 重建没有状态可丢
+#   - 探针用 /healthz（nginx 直接 return 200，不碰磁盘），
+#     不用 /，免得"首页 200 但静态资源 404"这种半坏状态被判定为健康
+#   - 副本数 1：单节点集群 + 静态站，横向扩展没有意义（真要扩也是加 CDN）
+#
+# 首次部署：
+#   kubectl apply -f deploy/wuhan-miniature.yaml
+# 之后 CI 推 v* tag 时会用 sed 把镜像 tag 写进清单再 apply，
+# 清单始终以仓库为准，改清单推 tag 即生效。
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wuhan-miniature
+  namespace: dev
+  labels:
+    app: wuhan-miniature
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wuhan-miniature
+  template:
+    metadata:
+      labels:
+        app: wuhan-miniature
+    spec:
+      containers:
+      - name: wuhan-miniature
+        # latest + Always：首次 apply 就能拉到镜像；之后 CI 会切到不可变 tag
+        image: crpi-p67sy5t6k9nsmste.cn-hangzhou.personal.cr.aliyuncs.com/gengbo/wuhan-miniature:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+          name: http
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 80
+          initialDelaySeconds: 2
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 3
+          failureThreshold: 3
+        # 静态站非常轻：实测镜像 25MB、启动 <1s、常驻内存 ~5MB。
+        # 这里给的就是"够用且不会饿死邻居"的量级——
+        # 同一台 k3s 上还跑着 13 个服务，请求值刻意压到最小。
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wuhan-miniature
+  namespace: dev
+  labels:
+    app: wuhan-miniature
+spec:
+  selector:
+    app: wuhan-miniature
+  ports:
+    - protocol: TCP
+      name: http
+      port: 80
+      targetPort: 80
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wuhan-miniature
+  namespace: dev
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # vendor/three.core.js 1.4MB + three.module.js 600KB，
+    # 已由容器内 nginx 自己 gzip（约 350KB）。
+    # 注解保留是为声明意图；nginx 不会二次压缩已带 Content-Encoding 的响应。
+    nginx.ingress.kubernetes.io/enable-compression: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+      - wuhan.gengbo.top
+    secretName: wuhan.gengbo.top-tls
+  rules:
+  - host: wuhan.gengbo.top
+    http:
+      paths:
+      - path: /
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: wuhan-miniature
+            port:
+              number: 80

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#eef0e8" />
+    <meta
+      name="description"
+      content="江城小境 — 一座可以走进去的两江微缩城市。黄鹤楼、长江大桥、江汉关、东湖与户部巷，在方寸之间遇见大武汉。"
+    />
+    <title>江城小境 · WUHAN IN MINIATURE</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- ============ 3D 舞台 ============ -->
+    <div id="stage" aria-label="可交互的武汉三维场景：拖动旋转，滚轮缩放"></div>
+
+    <!-- ============ 顶栏 ============ -->
+    <header class="topbar">
+      <a class="brand" href="#" data-action="home">
+        <span class="brand-seal" aria-hidden="true">江城</span>
+        <span class="brand-text">
+          <strong data-i18n="brand">江城小境</strong>
+          <em data-i18n="brandSub">WUHAN IN MINIATURE</em>
+        </span>
+      </a>
+
+      <nav class="topnav" data-i18n-aria-label="navLabel" aria-label="主导航">
+        <button type="button" data-action="explore" class="is-active" data-i18n="navExplore">探索武汉</button>
+        <button type="button" data-action="roam" data-i18n="navRoam">城市漫游</button>
+        <button type="button" data-action="about" data-i18n="navAbout">关于此境</button>
+      </nav>
+
+      <div class="topright">
+        <button
+          type="button"
+          class="sound-toggle"
+          data-action="sound"
+          aria-pressed="false"
+          data-i18n-title="soundOn"
+          title="开启环境音"
+        >
+          <span class="dot" aria-hidden="true"></span>
+          <span data-i18n="sound">环境音</span>
+        </button>
+        <div class="clock" role="group" data-i18n-aria-label="dayNightLabel" aria-label="昼夜切换">
+          <button type="button" data-action="day" class="is-active" data-i18n="day">白昼</button>
+          <button type="button" data-action="night" data-i18n="night">入夜</button>
+        </div>
+        <button type="button" class="sound-toggle lang-toggle" data-action="lang" data-i18n-title="lang" title="English">
+          <span data-i18n="lang">EN</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ============ 首屏 ============ -->
+    <aside class="hero" id="hero">
+      <p class="hero-kicker" data-i18n="heroKicker">A LITTLE WORLD, A FASTER RIVER</p>
+      <h1>
+        <span data-i18n="heroLine1">把江城，</span><br />
+        <em data-i18n="heroLine2">放在掌心。</em>
+        <span class="hero-mark" aria-hidden="true">汉</span>
+      </h1>
+      <p class="hero-lead" data-i18n="heroLead">
+        漫游两江交汇的三镇，登楼、过桥、过早。<br />在方寸之间，遇见九省通衢。
+      </p>
+      <div class="hero-actions">
+        <button type="button" class="btn-primary" data-action="explore">
+          <span data-i18n="exploreFree">自由探索</span>
+        </button>
+        <button type="button" class="btn-ghost" data-action="tour">
+          <span data-i18n="autoTour">自动游览</span>
+          <small data-i18n="autoTourHint">自动游览六处风景</small>
+        </button>
+      </div>
+      <dl class="hero-facts">
+        <div><dt data-i18n="factWeather">日照</dt><dd data-i18n="factWeatherValue">日光和煦</dd></div>
+        <div><dt data-i18n="factRiver">水位</dt><dd data-i18n="factRiverValue">江面开阔</dd></div>
+        <div><dt data-i18n="factCoord">坐标</dt><dd>30.59° N · 114.31° E</dd></div>
+      </dl>
+      <p class="hero-note" data-i18n="heroNote">步入街巷，听见江水的呼吸。</p>
+    </aside>
+
+    <!-- ============ 场景信息卡 ============ -->
+    <section class="scene-card" id="sceneCard" aria-live="polite">
+      <p class="scene-index"><span data-i18n="regionLabel">区域</span> <b id="regionIndex">01</b></p>
+      <h2 id="sceneName">江城全景</h2>
+      <p class="scene-en" id="sceneEn">THE WHOLE PICTURE</p>
+      <p class="scene-tag" id="sceneTag">两江交汇 · 三镇鼎立</p>
+      <p class="scene-desc" id="sceneDesc"></p>
+      <p class="scene-coord" id="sceneCoord">30.5928° N · 114.3055° E</p>
+    </section>
+
+    <!-- ============ 目的地导航 ============ -->
+    <nav class="rail" id="rail" data-i18n-aria-label="railLabel" aria-label="选择目的地">
+      <p class="rail-head">
+        <span data-i18n="railTitle">循着江水，遇见武汉</span>
+        <span class="rail-sep">/</span>
+        <span data-i18n="railHint">选择一处风景</span>
+      </p>
+      <ul class="rail-list" id="railList"></ul>
+    </nav>
+
+    <!-- ============ 视角工具 ============ -->
+    <div class="tools" role="toolbar" data-i18n-aria-label="toolsLabel" aria-label="视角工具">
+      <button type="button" data-action="home" data-i18n-title="toolHome" title="重置全景 (H)" aria-label="重置全景">
+        <span aria-hidden="true">⌂</span>
+      </button>
+      <hr />
+      <button type="button" data-action="plus" data-i18n-title="toolZoomIn" title="拉近视角" aria-label="拉近视角">
+        <span aria-hidden="true">＋</span>
+      </button>
+      <button type="button" data-action="minus" data-i18n-title="toolZoomOut" title="拉远视角" aria-label="拉远视角">
+        <span aria-hidden="true">－</span>
+      </button>
+      <hr />
+      <button
+        type="button"
+        data-action="spin"
+        aria-pressed="false"
+        data-i18n-title="toolSpin"
+        title="自动环绕"
+        aria-label="自动环绕"
+      >
+        <span aria-hidden="true">↻</span>
+      </button>
+      <button
+        type="button"
+        data-action="labels"
+        class="is-active"
+        aria-pressed="true"
+        data-i18n-title="toolLabels"
+        title="显示或隐藏地标"
+        aria-label="显示或隐藏地标"
+      >
+        <span aria-hidden="true">⌖</span>
+      </button>
+      <button type="button" data-action="capture" data-i18n-title="toolCapture" title="保存此刻" aria-label="保存场景截图">
+        <span aria-hidden="true">▣</span>
+      </button>
+      <button
+        type="button"
+        data-action="quality"
+        class="quality-tool"
+        data-i18n-title="toolQuality"
+        title="画质：高 / 中 / 低（低配设备自动降档）"
+        aria-label="切换画质档位"
+      >
+        <span aria-hidden="true" id="qualityText">高</span>
+      </button>
+      <button
+        type="button"
+        data-action="fullscreen"
+        data-i18n-title="toolFullscreen"
+        title="全屏查看"
+        aria-label="全屏查看"
+      >
+        <span aria-hidden="true">⤢</span>
+      </button>
+    </div>
+
+    <!-- ============ 地标标签层 ============ -->
+    <div class="labels" id="labels" aria-hidden="true"></div>
+
+    <!-- ============ 漫游 HUD ============ -->
+    <div class="roam-hud" id="roamHud" hidden>
+      <div class="roam-bar">
+        <span class="roam-mode" data-i18n="roamMode">水岸漫游</span>
+        <button type="button" data-action="roam-home" data-i18n="roamBack">回到起点</button>
+        <button type="button" data-action="roam-exit" data-i18n="roamExit">退出漫游</button>
+      </div>
+      <div class="pad" role="group" data-i18n-aria-label="padLabel" aria-label="移动方向">
+        <button type="button" data-move="forward" data-i18n-title="padForward" title="向前走">▲</button>
+        <button type="button" data-move="left" data-i18n-title="padLeft" title="向左走">◀</button>
+        <button type="button" data-move="back" data-i18n-title="padBack" title="向后走">▼</button>
+        <button type="button" data-move="right" data-i18n-title="padRight" title="向右走">▶</button>
+      </div>
+    </div>
+
+    <!-- ============ 底部提示 ============ -->
+    <footer class="hints" id="hints">
+      <span><kbd>拖动</kbd> <i data-i18n="hintDrag">旋转视角</i></span>
+      <span><kbd>滚轮</kbd> <i data-i18n="hintZoom">拉近细节</i></span>
+      <span><kbd>N</kbd> <i data-i18n="hintNight">切换昼夜</i></span>
+      <span><kbd>H</kbd> <i data-i18n="hintHome">回到全景</i></span>
+      <span><kbd>W A S D</kbd> <i data-i18n="hintWalk">漫游行走</i></span>
+      <span><kbd>Esc</kbd> <i data-i18n="hintExit">退出漫游</i></span>
+    </footer>
+
+    <!-- ============ 关于 ============ -->
+    <div class="modal-backdrop" id="aboutBackdrop" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+        <button type="button" class="modal-close" data-action="close-about" aria-label="关闭">✕</button>
+        <h2 id="aboutTitle" data-i18n="aboutTitle">方寸江城，处处江湖。</h2>
+        <p data-i18n="aboutP1">
+          江城小境是一座可以探索的微缩城市。两江交汇、三镇鼎立，黄鹤楼的飞檐、长江大桥的钢梁、江汉关的钟声、
+          东湖的磨山倒影与户部巷的烟火，在这里相遇。
+        </p>
+        <p data-i18n="aboutP2">
+          所有建筑与山水均以程序化几何实时构建。地标比例与空间距离经过艺术化编排，并非实测地理模型；
+          希望你放慢脚步，看看屋檐下、桥墩边，藏着怎样的小风景。
+        </p>
+        <ul class="about-keys">
+          <li><kbd>拖动</kbd> <span data-i18n="hintDrag">旋转视角</span></li>
+          <li><kbd>滚轮</kbd> <span data-i18n="hintZoom">拉近细节</span></li>
+          <li><kbd>N</kbd> <span data-i18n="hintNight">切换昼夜</span></li>
+          <li><kbd>H</kbd> <span data-i18n="hintHome">回到全景</span></li>
+          <li><kbd>WASD</kbd> <span data-i18n="hintWalk">漫游行走</span></li>
+          <li><kbd>Esc</kbd> <span data-i18n="hintExit">退出漫游</span></li>
+        </ul>
+        <p class="about-foot" data-i18n="aboutFoot">以武汉为灵感的艺术缩景 · 非实测地理模型 · 程序化生成</p>
+      </section>
+    </div>
+
+    <!-- ============ 载入 ============ -->
+    <div class="loader" id="loader">
+      <div class="loader-inner">
+        <span class="loader-seal" aria-hidden="true">江城</span>
+        <p class="loader-title" data-i18n="loading">正在铺开一幅江城</p>
+        <div class="loader-bar"><i id="loaderBar"></i></div>
+        <p class="loader-hint" id="loaderHint" data-i18n="loadingHint">正在生成三镇街巷…</p>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <!-- 自检输出（?probe=1 时写入运行期事实，供自动化验收读取） -->
+    <div id="selfcheck" hidden></div>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
