@@ -147,8 +147,8 @@ export const REGIONS = [
     id: 'all',
     icon: '◎',
     coord: '30.5928° N · 114.3055° E',
-    camera: [255, 118, 335],
-    target: [16, 10, 16],
+    camera: [466, 403, 617],
+    target: [16, 4, 16],
     walk: [40, 1.7, 66],
     roam: 60,
     zh: {
@@ -471,25 +471,34 @@ export function buildCity(scene, opts = {}) {
   /* ---------- 天空与水面 ---------- */
   const { mesh: sky, uniforms: skyU } = createSky(THREE, { radius: 900 });
   scene.add(sky);
-  const water = createWater(THREE, { size: 700, colorShallow: '#8fa79b', colorDeep: '#40606a', skyColor: '#d3dbc9' });
-  water.position.set(16, -0.45, 0);
-  water.scale.set(0.9, 0.74, 1); // 收进基座之内，水面只在江槽与湖盆里露出
+  const water = createWater(THREE, { size: 700, corner: 62, colorShallow: '#8fa79b', colorDeep: '#40606a', skyColor: '#d3dbc9' });
+  // 水面比基座轮廓内收 0.8，四角用圆弧收住（corner 取局部坐标下的 62），
+  // 于是整块水面都落在基座之内，江水一路铺到基座边沿而不会从圆角外探出。
+  water.position.set(18, -0.44, 0);
+  water.scale.set(0.9063, 0.7463, 1);
   scene.add(water);
 
   /* ---------- 1. 基座与三镇地块 ---------- */
-  // 基座顶面必须低于水面，否则会把江面盖住：基座 −3.0 → −1.0，水面 −0.45，陆地 −0.6 → 0
-  b.slab('basePlate', landShape(roundedRect(-300, -262, 336, 262, 26)), 0, -3.0, 0, 2.0);
+  // 竖向分层（自下而上）：基座 −3.0 → −0.78，岸圈 −0.78 → −0.15，水面 −0.44，陆地 −0.6 → 0。
+  // 基座顶面要留在波谷（约 −0.67）之下，岸圈顶面要盖过波峰（约 −0.21），
+  // 这样浪怎么起伏都不会把基座顶面露出来、也不会漫过岸圈。
+  const BASE_R = 44; // 圆角半径取大一些，整体轮廓更接近原站那种圆润的托盘
+  const baseOutline = roundedRect(-300, -262, 336, 262, BASE_R, 14);
+  // 上下边缘各倒 0.85 的圆角，侧面不再是直角棱：底沿收圆、顶面收肩，整个模型"落"得下去
+  b.slab('basePlate', landShape(baseOutline), 0, -3.0, 0, 0.52, 0, { bevel: 0.85, bevelSegments: 6, curveSegments: 14 });
+  // 岸圈：外沿与基座顶面同宽，内沿挖出水面的形状，圈壁正好把水面外沿埋在里面
+  b.slab('basePlate', landShape(roundedRect(-299.15, -261.15, 335.15, 261.15, BASE_R - 0.85, 14), [roundedRect(-298, -260, 334, 260, BASE_R - 2, 14)]), 0, -0.78, 0, 0.63);
 
   const eastLake = blob(214, -12, 50, 34, 11);
   const shaHu = blob(118, -6, 22, 15, 22);
   const ziyangHu = blob(122, 88, 13, 9, 33);
 
   // 汉口（汉江以北）
-  b.slab('lawn', landShape(roundedRect(-282, -246, -23, 12, 16)), 0, -0.6, 0, 0.6);
+  b.slab('lawn', landShape(roundedRect(-282, -246, -23, 12, 16, 12)), 0, -0.6, 0, 0.6);
   // 汉阳（汉江以南）
-  b.slab('lawn', landShape(roundedRect(-282, 28, -23, 246, 16)), 0, -0.6, 0, 0.6);
+  b.slab('lawn', landShape(roundedRect(-282, 28, -23, 246, 16, 12)), 0, -0.6, 0, 0.6);
   // 武昌（长江以东，含东湖/沙湖/紫阳湖水面）
-  b.slab('lawn', landShape(roundedRect(23, -246, 318, 246, 20), [eastLake, shaHu, ziyangHu]), 0, -0.6, 0, 0.6);
+  b.slab('lawn', landShape(roundedRect(23, -246, 318, 246, 20, 14), [eastLake, shaHu, ziyangHu]), 0, -0.6, 0, 0.6);
 
   /* ---------- 2. 江滩、堤岸与湖岸 ---------- */
   // 汉口江滩

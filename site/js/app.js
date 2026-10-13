@@ -300,7 +300,7 @@ class Orbit {
     this.theta = 0.7;
     this.phi = 0.95;
     this.minRadius = 16;
-    this.maxRadius = 760;
+    this.maxRadius = 880;
     this.minPhi = 0.1;
     this.maxPhi = 1.53;
     this.spin = 0;
@@ -587,6 +587,7 @@ function enterRoam(region) {
   roam.pitch = -0.04;
   roam.vel.set(0, 0, 0);
   document.body.classList.add('is-roaming');
+  syncTopNav();
   const hud = $('#roamHud');
   if (hud) hud.hidden = false;
   orbit.tween = null;
@@ -596,6 +597,7 @@ function enterRoam(region) {
 function exitRoam() {
   roam.active = false;
   document.body.classList.remove('is-roaming');
+  syncTopNav();
   const hud = $('#roamHud');
   if (hud) hud.hidden = true;
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock?.();
@@ -878,6 +880,15 @@ function applyLang(lang) {
 }
 
 /* ---------- 按钮 ---------- */
+// 顶部三个切换按钮共用一条选中光标（.topnav button.is-active::after），
+// 任何入口改变视图状态时都要同步，否则光标会一直停在第一列。
+function setTopNav(action) {
+  $$('.topnav [data-action]').forEach((el) => el.classList.toggle('is-active', el.dataset.action === action));
+}
+function syncTopNav() {
+  setTopNav(document.body.classList.contains('is-roaming') ? 'roam' : 'explore');
+}
+
 function onAction(action) {
   switch (action) {
     case 'home':
@@ -889,22 +900,26 @@ function onAction(action) {
       const hero = $('#hero');
       if (hero) hero.hidden = true;
       if (roam.active) exitRoam();
+      syncTopNav();
       break;
     }
     case 'roam': {
       const hero = $('#hero');
       if (hero) hero.hidden = true;
       if (!roam.active) enterRoam(REGIONS[activeRegion]);
+      syncTopNav();
       break;
     }
     case 'about': {
       const m = $('#aboutBackdrop');
       if (m) m.hidden = false;
+      setTopNav('about');
       break;
     }
     case 'close-about': {
       const m = $('#aboutBackdrop');
       if (m) m.hidden = true;
+      syncTopNav();
       break;
     }
     case 'tour':

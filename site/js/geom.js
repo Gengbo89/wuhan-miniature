@@ -1431,7 +1431,7 @@ export function addTram(b, mats, o) {
 /* ============================================================
    11. 水面与天空（原创着色器）
    ============================================================ */
-export function createWater(THREE_NS, { size = 900, colorShallow, colorDeep, skyColor, night = false } = {}) {
+export function createWater(THREE_NS, { size = 900, corner = 0, colorShallow, colorDeep, skyColor, night = false } = {}) {
   const uniforms = {
     uTime: { value: 0 },
     uShallow: { value: new THREE.Color(colorShallow ?? '#7f9a92') },
@@ -1489,6 +1489,23 @@ export function createWater(THREE_NS, { size = 900, colorShallow, colorDeep, sky
     `,
   });
   const geo = new THREE.PlaneGeometry(size, size, 120, 120);
+  // 方形水面的四角收成圆弧，与基座轮廓对齐：否则水面会从基座的圆角处探出去。
+  // 直边上的顶点不动，只把角部方格按径向压到圆弧上（保持网格密度，波浪照常）。
+  if (corner > 0) {
+    const c = size / 2 - corner;
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const px = pos.getX(i), py = pos.getY(i);
+      const dx = Math.abs(px) - c, dy = Math.abs(py) - c;
+      if (dx > 0 && dy > 0) {
+        const u = dx / corner, v = dy / corner;
+        const k = Math.max(u, v) / Math.max(Math.hypot(u, v), 1e-6);
+        pos.setX(i, Math.sign(px) * (c + dx * k));
+        pos.setY(i, Math.sign(py) * (c + dy * k));
+      }
+    }
+    pos.needsUpdate = true;
+  }
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI / 2;
   mesh.receiveShadow = false;
