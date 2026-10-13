@@ -166,7 +166,93 @@ site/
 
 ---
 
-## 六、版权边界
+## 七、部署（容器 → 个人版 ACR → k3s）
+
+与 `Gengbo89/home`、`Gengbo89/ansible-canvas` 一致的套路：**镜像只由 GitHub CI 构建**，
+本机不产出镜像；CI 推个人版 ACR，再 SSH 到 k3s 主机 apply 清单。
+
+### 涉及文件
+
+| 文件 | 作用 |
+| --- | --- |
+| `Dockerfile` | `nginx:1.27-alpine` 托管 `site/`；构建期断言 6 个入口文件非空 |
+| `nginx.conf` | `/healthz` 探针、gzip、`vendor/` 长缓存 / `js/` 短缓存 |
+| `.github/workflows/release.yml` | 推 `v*` tag 触发：校验 → 构建推送 → 部署 |
+| `deploy/wuhan-miniature.yaml` | Deployment + Service + Ingress（ns `dev`，`wuhan.gengbo.top`） |
+
+### 目标环境
+
+- 集群：单节点 k3s，`k3s-master`，`112.124.63.35`，SSH 端口 **22222**（不是 22）
+- namespace：`dev`；入口控制器 `ingress-nginx`；证书 `cert-manager` 的 `letsencrypt-prod`
+- 镜像仓库：`crpi-p67sy5t6k9nsmste.cn-hangzhou.personal.cr.aliyuncs.com/gengbo/wuhan-miniature`
+- 域名：`wuhan.gengbo.top`（`*.gengbo.top` 为泛解析，指向同一台机器，无需改 DNS）
+
+> 集群侧 `/etc/rancher/k3s/registries.yaml` 把 `docker.io` 镜像到同区域的 ACR **VPC** 端点。
+> ACR 允许**匿名拉取**（即先向 `dockerauth.cn-hangzhou.aliyuncs.com` 申请 pull token，无需凭据），
+> 所以清单里**不需要 `imagePullSecrets`**。
+
+### 发布流程
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0     # 触发 CI：构建 + 推送 + 部署
+```
+
+CI 的 `deploy` job 会先 scp 清单到 `/root/wuhan-miniature-deploy/`，用 `sed` 把本次 tag
+写进清单**再** apply（而不是 apply 完再 `set image`，后者会先按旧 tag 滚动一次、再多滚一轮），
+最后 `kubectl rollout status` 等完成，失败则打印 Pod 描述与日志并以非零退出。
+
+### 需要的 GitHub Secrets
+
+`ALIYUN_USERNAME`、`ALIYUN_PASSWORD`、`K3S_HOST`、`K3S_PORT`、`K3S_USER`、`K3S_SSH_KEY`
+
+### 手工部署（CI 不可用时）
+
+```bash
+docker build -t <registry>/gengbo/wuhan-miniature:v1.0.0 .
+docker push <registry>/gengbo/wuhan-miniature:v1.0.0
+ssh -p 22222 root@112.124.63.35
+  kubectl apply -f deploy/wuhan-miniature.yaml
+  kubectl rollout status deployment/wuhan-miniature -n dev
+```
+
+### 部署前的本地校验（不构建镜像）
+
+```bash
+# nginx 配置语法
+docker run --rm -v "$PWD/nginx.conf:/etc/nginx/conf.d/wuhan.conf:ro" nginx:1.27-alpine nginx -t
+
+# 清单对真实集群做服务端 dry-run（不创建对象）
+kubectl apply --dry-run=server -f deploy/wuhan-miniature.yaml
+```
+
+### nginx.conf 里三处不要"顺手简化"
+
+都是实测校正过的，改回去会静默失效：
+
+1. `location ^~ /vendor/` 的 **`^~` 不能去掉**。普通前缀 location 会输给后面的
+   正则 location，实测去掉后 `/vendor/three.core.js` 命中的是 1 小时那条规则，
+   30 天长缓存形同虚设。
+2. `/healthz` 用 **`default_type text/plain`**，不能用 `add_header Content-Type`。
+   `return 200 "ok\n"` 自带类型是 `application/octet-stream`，而 `add_header` 是追加语义，
+   实测会同时出现 `application/octet-stream` 和 `text/plain` 两个 `Content-Type`。
+3. 缓存**只用 `add_header Cache-Control`，不要和 `expires` 并用**。`expires` 自己会发一个
+   `Cache-Control: max-age=...`，再配一条 `add_header` 就会变成两个 `Cache-Control`（实测确认）。
+
+实测数据（`nginx:1.27-alpine`，真实 `site/` 文件）：
+
+| 路径 | 响应头 |
+| --- | --- |
+| `/healthz` | `Content-Type: text/plain`，`Content-Length: 3` |
+| `/vendor/three.core.js` | `Cache-Control: public, max-age=2592000, immutable` |
+| `/js/app.js`、`/styles.css` | `Cache-Control: public, max-age=3600, must-revalidate` |
+| `/` | 200，10,879 字节 |
+| `/nope` | 404（真 404，不回退首页） |
+
+gzip：`three.core.js` 传输 **278,598** 字节（原始 1,403,455，约 5:1）。
+
+---
+
+## 七、版权边界
 
 - **参考对象**：`https://suzhou.liuwa.xyz/`（姑苏小境 · SUZHOU IN MINIATURE）。通过 REA 对其**已发布的**
   前端产物做被动静态分析（打包图、模块依赖、字符串、路由）与被动浏览器观测，仅用于理解
@@ -182,10 +268,13 @@ site/
 
 ---
 
-## 七、目录说明
+## 八、目录说明
 
-| 目录 | 内容 |
+| 目录 / 文件 | 内容 |
 | --- | --- |
-| `site/` | **交付物**：可直接部署的静态站点 |
+| `site/` | **交付物**：可直接部署的静态站点（8 个文件，3.1MB） |
+| `Dockerfile`、`nginx.conf`、`.dockerignore` | 容器化：nginx 静态托管 + 缓存/压缩策略 |
+| `deploy/wuhan-miniature.yaml` | k3s 部署清单（ns `dev`，`wuhan.gengbo.top`） |
+| `.github/workflows/release.yml` | CI：推 `v*` tag → 校验 → 构建推送 ACR → SSH 部署 |
 | `_verify/` | 验证证据：截图、纯 Python PNG 解码/取色/分类脚本（`pngstat.py`）、证据提取脚本（`grab.py`） |
 | `_reference/` | 逆向分析留存的第三方产物（不再分发） |
