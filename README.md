@@ -278,3 +278,27 @@ gzip：`three.core.js` 传输 **278,598** 字节（原始 1,403,455，约 5:1）
 | `.github/workflows/release.yml` | CI：推 `v*` tag → 校验 → 构建推送 ACR → SSH 部署 |
 | `_verify/` | 验证证据：截图、纯 Python PNG 解码/取色/分类脚本（`pngstat.py`）、证据提取脚本（`grab.py`） |
 | `_reference/` | 逆向分析留存的第三方产物（不再分发） |
+---
+
+## 附录：首次上线的实际路径（无 secrets 引导）
+
+正式流水线是 `.github/workflows/release.yml`（打 `v*` tag → 校验 → 构建 → 推送个人版 ACR
+→ scp 清单 + ssh apply/rollout），它需要 6 个 **Repository secrets**：
+`ALIYUN_USERNAME`、`ALIYUN_PASSWORD`、`K3S_HOST`、`K3S_PORT`、`K3S_USER`、`K3S_SSH_KEY`。
+
+首次上线时这些 secrets 尚未配置，`build` 任务会卡在 `Login Aliyun ACR`，因此改用一条
+**不需要任何 secrets** 的旁路先把镜像交付出来：
+
+1. `.github/workflows/build-image-artifact.yml` 在 CI 里 `docker build`，
+   `docker save | gzip` 后作为 **Release 附件**发布（用 CI 自带的 `GITHUB_TOKEN`）。
+2. 下载并导入：`curl -L <release asset> | gunzip -c | docker load`。
+3. 打标签推送：`docker tag wuhan-miniature:v1.0.1 $ACR:v1.0.1 && docker push $ACR:v1.0.1`（同时推 `latest`）。
+4. 固定版本后 apply：
+   `sed "s#image: $REPO:.*#image: $REPO:v1.0.1#" deploy/wuhan-miniature.yaml | kubectl apply -f -`。
+5. `kubectl rollout status deployment/wuhan-miniature -n dev`。
+
+> 镜像始终由 GitHub CI 构建，本地只做导入与推送，不构建。
+> secrets 配好后请直接用 `release.yml`，`build-image-artifact.yml` 可删除。
+
+个人版 ACR 无需事先建仓库，首次 `push` 会自动创建；该仓库允许匿名拉取，
+所以 Deployment 不需要 `imagePullSecrets`。
